@@ -4,10 +4,9 @@ import time
 import re
 import math
 import pandas as pd
+from datetime import datetime
 from PIL import Image
 from bs4 import BeautifulSoup
-# 使用 RapidOCR（ONNXRuntime 后端，完全绕开 PaddlePaddle/oneDNN，Windows 零问题）
-# 安装：pip install rapidocr-onnxruntime
 from rapidocr_onnxruntime import RapidOCR
 
 ocr = RapidOCR()
@@ -16,22 +15,24 @@ ocr = RapidOCR()
 WEIBO_COOKIE = "SCF=Av6hL9UgUKbq3oy4tjWjFj-8blmK10fETWmbEK6k-nY_PFq01DsGvSj75f--3xFGn6s2NactDnQv53WcMTi3Er8.; UOR=xiaopeng.feishu.cn,weibo.com,xiaopeng.feishu.cn; SINAGLOBAL=9670518676471.285.1773370592305; SUB=_2A25HArGwDeRhGeBN7lsX9yzLwj-IHXVkfkt4rDV8PUNbmtAbLVDQkW9NRFiOS5n-hAnaamIS6IHpwbYgsEXf5O1C; SUBP=0033WrSXqPxfM725Ws9jqgMF55529P9D9WWRTaI8oV2_slHORznL98rD5JpX5KzhUgL.Foq0SK.cS0zN1Ke2dJLoI0MLxKBLB.zL1KnLxK-L12BL1-2LxKqL1KqL1hMLxKML1KBLBKnLxKqL1hnLBoMce0-4SoMES0.0; ALF=02_1781419746; XSRF-TOKEN=7HXV4mw_O3ABxT85I2qyLKkv; _s_tentry=www.weibo.com; Apache=9840460208263.014.1779156847181; ULV=1779156847184:4:3:2:9840460208263.014.1779156847181:1779070205277; WBPSESS=MKc6aAHqUx8kbNTT1MYyoY_Oncp5opsvxF7yFK9IfddDcD1vyYcnlBTaHzz3sUh4H5NalHNDleyVDk91CJHh2sL1g_vVMReFkTDsudw9znDBLf90bJ3A1B-uyXZOAIltuZoYJR0bcTC8mBrJ4fITSg=="
 
 COMPETITOR_UIDS = [
-    6192145805,   # 示例：埃安AION
+    6192145805,
 ]
 
 SEARCH_KEYWORD   = "OTA"
 SEARCH_TOP_N     = 10
 REQUEST_INTERVAL = 3
 
-# 所有文件保存在脚本所在目录
+# ✅ 新增：日期过滤范围（格式 YYYY-MM-DD，填 None 则不限制）
+DATE_START = "2026-03-15"   # 开始日期（含）
+DATE_END   = "2026-05-15"   # 结束日期（含）
+
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
 IMAGE_DIR   = os.path.join(SCRIPT_DIR, "images")
 SLICE_DIR   = os.path.join(SCRIPT_DIR, "images", "slices")
 OUTPUT_CSV  = os.path.join(SCRIPT_DIR, "ota_monitor.csv")
 
-# 超高图切片参数
-MAX_SLICE_HEIGHT = 3000   # 每片高度（px）
-SLICE_OVERLAP    = 200    # 相邻切片重叠像素，避免文字被截断
+MAX_SLICE_HEIGHT = 3000
+SLICE_OVERLAP    = 200
 # ============================================
 
 HEADERS = {
@@ -45,9 +46,6 @@ HEADERS = {
 }
 
 
-# ─────────────────────────────────────────────
-# 工具：获取用户昵称
-# ─────────────────────────────────────────────
 def get_user_name(uid: int) -> str:
     url = f"https://weibo.com/ajax/profile/info?uid={uid}"
     try:
@@ -58,9 +56,6 @@ def get_user_name(uid: int) -> str:
         return str(uid)
 
 
-# ─────────────────────────────────────────────
-# 工具：搜索用户主页关键词微博
-# ─────────────────────────────────────────────
 def search_weibo_by_keyword(uid: int, keyword: str, top_n: int = 10) -> list:
     results, page = [], 1
     while len(results) < top_n:
@@ -90,11 +85,36 @@ def search_weibo_by_keyword(uid: int, keyword: str, top_n: int = 10) -> list:
     return results[:top_n]
 
 
-# ─────────────────────────────────────────────
-# 工具：下载图片
-# ─────────────────────────────────────────────
+# ✅ 新增：日期范围过滤函数
+def filter_by_date(weibos: list, start: str | None, end: str | None) -> list:
+    """
+    根据 DATE_START / DATE_END 过滤微博列表。
+    start / end 格式为 'YYYY-MM-DD'，填 None 表示该侧不限制。
+    """
+    if not start and not end:
+        return weibos
+
+    dt_start = datetime.strptime(start, "%Y-%m-%d") if start else None
+    dt_end   = datetime.strptime(end,   "%Y-%m-%d") if end   else None
+
+    filtered = []
+    for wb in weibos:
+        date_str = parse_date(wb.get("created_at", ""))
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            continue  # 日期解析失败则跳过
+
+        if dt_start and dt < dt_start:
+            continue
+        if dt_end and dt > dt_end:
+            continue
+        filtered.append(wb)
+
+    return filtered
+
+
 def parse_date(created_at: str) -> str:
-    """将微博时间字符串（如 Sat May 09 14:50:24 +0800 2026）转为 YYYY-MM-DD。"""
     try:
         from email.utils import parsedate
         t = parsedate(created_at)
@@ -104,14 +124,9 @@ def parse_date(created_at: str) -> str:
 
 
 def download_image(img_url: str, save_name: str) -> str | None:
-    """
-    下载图片并以 save_name 命名保存（不含扩展名，自动从 URL 取后缀）。
-    例：save_name="埃安-2026-05-09-1" → 埃安-2026-05-09-1.jpg
-    """
     os.makedirs(IMAGE_DIR, exist_ok=True)
     if img_url.startswith("//"):
         img_url = "https:" + img_url
-    # 取原始扩展名（.jpg/.png 等），默认 .jpg
     raw_name = img_url.split("/")[-1].split("?")[0]
     ext = os.path.splitext(raw_name)[1] or ".jpg"
     local_path = os.path.join(IMAGE_DIR, save_name + ext)
@@ -128,21 +143,11 @@ def download_image(img_url: str, save_name: str) -> str | None:
         return None
 
 
-# ─────────────────────────────────────────────
-# ✅ 修复核心：OCR 函数
-#   - 使用旧版稳定 API ocr.ocr()
-#   - 超高图自动切片，分段识别后拼合
-# ─────────────────────────────────────────────
 def slice_tall_image(image_path: str) -> list[str]:
-    """
-    将超高图按 MAX_SLICE_HEIGHT 切成多片，返回切片路径列表。
-    普通图片直接返回 [image_path]（不切片）。
-    """
     img = Image.open(image_path)
     w, h = img.size
-
     if h <= MAX_SLICE_HEIGHT:
-        return [image_path]   # 不需要切片
+        return [image_path]
 
     os.makedirs(SLICE_DIR, exist_ok=True)
     base_name = os.path.splitext(os.path.basename(image_path))[0]
@@ -164,34 +169,23 @@ def slice_tall_image(image_path: str) -> list[str]:
 
 
 def ocr_image(image_path: str) -> str:
-    """
-    对单张图片（或超高图切片后）进行 OCR，返回识别文本。
-    RapidOCR 返回：(result, elapse)
-      result = [[bbox, text, score], ...] 或 None
-    """
     slice_paths = slice_tall_image(image_path)
     all_texts = []
-
     for sp in slice_paths:
         try:
             result, _ = ocr(sp)
             if not result:
                 continue
             for item in result:
-                # item: [bbox, text, score]
                 if isinstance(item, (list, tuple)) and len(item) >= 2:
                     text = item[1]
                     if text:
                         all_texts.append(str(text))
         except Exception as e:
             print(f"    [!] OCR 片段失败 {sp}: {e}")
-
     return "\n".join(all_texts)
 
 
-# ─────────────────────────────────────────────
-# 工具：提取版本号/日期/功能点
-# ─────────────────────────────────────────────
 def extract_ota_info(text: str) -> dict:
     info = {}
     ver = re.search(r'[Vv]?\d+\.\d+(\.\d+)*', text)
@@ -208,13 +202,10 @@ def extract_ota_info(text: str) -> dict:
     return info
 
 
-# ─────────────────────────────────────────────
-# 处理单条微博
-# ─────────────────────────────────────────────
 def process_weibo(wb: dict, user_name: str, uid: int) -> dict:
     text = BeautifulSoup(wb.get("text_raw", ""), "html.parser").get_text()
     created_at = wb.get("created_at", "")
-    date_str = parse_date(created_at)          # YYYY-MM-DD
+    date_str = parse_date(created_at)
     print(f"\n  📄 [{created_at}] {text[:60]}...")
 
     record = {
@@ -241,7 +232,6 @@ def process_weibo(wb: dict, user_name: str, uid: int) -> dict:
         if not img_url:
             continue
 
-        # 命名规则：品牌-YYYY-MM-DD-序号，如 埃安-2026-05-09-1
         save_name = f"{user_name}-{date_str}-{idx}"
         print(f"    [{idx}/{len(pic_list)}] 📥 下载：{img_url}")
         local_path = download_image(img_url, save_name)
@@ -268,22 +258,27 @@ def process_weibo(wb: dict, user_name: str, uid: int) -> dict:
     return record
 
 
-# ─────────────────────────────────────────────
-# 主入口
-# ─────────────────────────────────────────────
 def monitor_all():
     all_results = []
     for uid in COMPETITOR_UIDS:
         user_name = get_user_name(uid)
         print(f"\n{'='*55}")
         print(f"🔍 {user_name}（UID: {uid}）  关键词：{SEARCH_KEYWORD}  取前{SEARCH_TOP_N}条")
+        # ✅ 打印当前日期过滤范围
+        print(f"📅 日期范围：{DATE_START or '不限'} ～ {DATE_END or '不限'}")
         print(f"{'='*55}")
 
         weibos = search_weibo_by_keyword(uid, SEARCH_KEYWORD, top_n=SEARCH_TOP_N)
+
+        # ✅ 日期过滤
+        weibos = filter_by_date(weibos, DATE_START, DATE_END)
+
+        # ✅ 过滤后为空则输出"无"并跳过
         if not weibos:
-            print("  ⚠️  未搜到相关微博")
+            print(f"  ⚠️  {DATE_START} ～ {DATE_END} 范围内未搜到相关微博：无")
             continue
-        print(f"  ✅ 找到 {len(weibos)} 条，开始处理...")
+
+        print(f"  ✅ 日期过滤后剩余 {len(weibos)} 条，开始处理...")
 
         for i, wb in enumerate(weibos, 1):
             print(f"\n  ── 第 {i}/{len(weibos)} 条 ──")
@@ -296,7 +291,7 @@ def monitor_all():
         df.to_csv(OUTPUT_CSV, index=False, encoding="utf-8-sig")
         print(f"\n\n📁 完成！已保存 {OUTPUT_CSV}（{len(df)} 条）")
     else:
-        print("\n\n📭 未发现 OTA 相关微博。")
+        print("\n\n📭 无")   # ✅ 所有品牌均无结果时统一输出"无"
 
 
 if __name__ == "__main__":
