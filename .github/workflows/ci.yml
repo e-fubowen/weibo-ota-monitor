@@ -13,6 +13,11 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: python -m pytest tests/
+        env:
+          WEIBO_COOKIE: dummy
+          LLM_API_KEY: dummy
+          LLM_BASE_URL: https://dummy.com/v1
+          LLM_MODEL: dummy
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

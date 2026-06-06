@@ -21,6 +21,7 @@ from config import (
     SEARCH_KEYWORD,
     SEARCH_TOP_N,
     setup_logging,
+    validate,
 )
 from extractor import extract_ota_info
 from llm_summarizer import summarize_ota
@@ -152,6 +153,7 @@ def process_one_brand(uid: int, processed_ids: set) -> int:
 # ─────────────────────────────────────────────
 def monitor_all():
     setup_logging()
+    validate()
     logger.info("启动 OTA 监控...")
 
     cleanup_old_images()

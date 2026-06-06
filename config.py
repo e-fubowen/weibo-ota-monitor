@@ -24,10 +24,7 @@ def setup_logging():
 
 
 # ================== 微博配置 ==================
-WEIBO_COOKIE = os.getenv("WEIBO_COOKIE")
-if not WEIBO_COOKIE:
-    raise ValueError("请在 .env 或环境变量中设置 WEIBO_COOKIE")
-
+WEIBO_COOKIE = os.getenv("WEIBO_COOKIE", "")
 
 COMPETITOR_UIDS = [
     6192145805,  # 埃安AION
@@ -44,12 +41,17 @@ DATE_START = "2026-03-15"
 DATE_END   = "2026-05-15"
 
 # ================== LLM 配置 ==================
-LLM_API_KEY  = os.getenv("LLM_API_KEY")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL")
-LLM_MODEL    = os.getenv("LLM_MODEL")
+LLM_API_KEY  = os.getenv("LLM_API_KEY", "")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
+LLM_MODEL    = os.getenv("LLM_MODEL", "")
 
-if not LLM_API_KEY or not LLM_BASE_URL or not LLM_MODEL:
-    raise ValueError("请在 .env 或环境变量中设置 LLM_API_KEY、LLM_BASE_URL、LLM_MODEL")
+
+def validate():
+    """运行时校验必要配置，避免模块导入时直接报错。"""
+    if not WEIBO_COOKIE:
+        raise ValueError("请在 .env 或环境变量中设置 WEIBO_COOKIE")
+    if not LLM_API_KEY or not LLM_BASE_URL or not LLM_MODEL:
+        raise ValueError("请在 .env 或环境变量中设置 LLM_API_KEY、LLM_BASE_URL、LLM_MODEL")
 
 LLM_MAX_WEIBO_LENGTH = 300  # 传给 LLM 的微博正文最大字符数
 LLM_MAX_OCR_LENGTH   = 3000  # 传给 LLM 的 OCR 内容最大字符数
