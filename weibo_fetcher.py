@@ -3,11 +3,12 @@ weibo_fetcher.py — 微博搜索、翻页、日期过滤
 """
 import logging
 import time
-import requests
 from datetime import datetime
 from functools import wraps
 
-from config import HEADERS, REQUEST_INTERVAL, DATE_START
+import requests
+
+from config import DATE_START, HEADERS, REQUEST_INTERVAL
 
 logger = logging.getLogger(__name__)
 

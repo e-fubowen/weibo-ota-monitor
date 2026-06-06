@@ -5,8 +5,10 @@ llm_summarizer.py — 调用 LLM 对 OTA 内容进行结构化总结
     python llm_summarizer.py
 """
 import logging
+
 from openai import OpenAI
-from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, LLM_MAX_WEIBO_LENGTH, LLM_MAX_OCR_LENGTH
+
+from config import LLM_API_KEY, LLM_BASE_URL, LLM_MAX_OCR_LENGTH, LLM_MAX_WEIBO_LENGTH, LLM_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +39,9 @@ def summarize_ota(brand: str, weibo_text: str, ocr_text: str) -> str:
 【OTA版本号】：
 【支持车型】：
 【更新亮点（Top3）】：
-- 
-- 
-- 
+-
+-
+-
 【智能驾驶】：
 【智能座舱/车机】：
 【能耗/续航】：

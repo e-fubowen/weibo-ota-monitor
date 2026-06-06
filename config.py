@@ -1,8 +1,8 @@
 """
 config.py — 所有配置集中在这里，其他文件不需要改
 """
-import os
 import logging
+import os
 
 try:
     from dotenv import load_dotenv

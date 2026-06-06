@@ -7,18 +7,25 @@ ota_monitor.py — 主入口
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from bs4 import BeautifulSoup
 from datetime import datetime
 
+from bs4 import BeautifulSoup
+
 from config import (
-    COMPETITOR_UIDS, SEARCH_KEYWORD, SEARCH_TOP_N,
-    DATE_START, DATE_END, REQUEST_INTERVAL, MAX_WORKERS,
-    OUTPUT_DIR, OUTPUT_CSV, setup_logging,
+    COMPETITOR_UIDS,
+    DATE_END,
+    DATE_START,
+    MAX_WORKERS,
+    OUTPUT_CSV,
+    REQUEST_INTERVAL,
+    SEARCH_KEYWORD,
+    SEARCH_TOP_N,
+    setup_logging,
 )
-from weibo_fetcher import get_user_name, search_weibo_by_keyword, filter_by_date
-from ocr_engine import download_image, ocr_image, cleanup_old_images
-from llm_summarizer import summarize_ota
 from extractor import extract_ota_info
+from llm_summarizer import summarize_ota
+from ocr_engine import cleanup_old_images, download_image, ocr_image
+from weibo_fetcher import filter_by_date, get_user_name, search_weibo_by_keyword
 from writer import load_processed_ids, write_records
 
 logger = logging.getLogger(__name__)

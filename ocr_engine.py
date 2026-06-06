@@ -2,16 +2,22 @@
 ocr_engine.py — 图片下载、超高图切片、OCR 识别
 """
 import logging
-import os
 import math
+import os
 import time
+
 import requests
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
 from config import (
-    HEADERS, IMAGE_DIR, SLICE_DIR,
-    MAX_SLICE_HEIGHT, SLICE_OVERLAP, OCR_SLEEP_INTERVAL, IMAGE_TTL_DAYS,
+    HEADERS,
+    IMAGE_DIR,
+    IMAGE_TTL_DAYS,
+    MAX_SLICE_HEIGHT,
+    OCR_SLEEP_INTERVAL,
+    SLICE_DIR,
+    SLICE_OVERLAP,
 )
 from weibo_fetcher import retry
 

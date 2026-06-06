@@ -1,4 +1,4 @@
-from weibo_fetcher import parse_date, filter_by_date
+from weibo_fetcher import filter_by_date, parse_date
 
 
 def test_parse_date_valid():
