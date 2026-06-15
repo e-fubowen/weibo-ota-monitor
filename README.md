@@ -1,4 +1,4 @@
-# 竞品OTA微博监控
+# 竞品车微博监控
 
 定时抓取指定车企官方微博的OTA升级公告，并利用OCR识别图片中的升级内容。
 
@@ -10,9 +10,12 @@
 
 ## 使用方法
 1. 安装依赖：`pip install -r requirements.txt`
-2. 设置环境变量 `WEIBO_COOKIE`（从浏览器复制你的微博Cookie）
+2. 复制 `.env.example` 为 `.env`，填入微博 Cookie 和 LLM API Key：
+   ```bash
+   cp .env.example .env
+   ```
 3. 修改 `COMPETITOR_UIDS` 列表，填入竞品微博UID
-4. 运行：`python 竞品OTA微博爬取.py`
+4. 运行：`python ota_monitor.py`
 
 ## 注意事项
 - 请遵守微博的robots.txt和服务条款

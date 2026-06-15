@@ -1,17 +1,36 @@
 """
 ocr_engine.py — 图片下载、超高图切片、OCR 识别
 """
-import os
+import logging
 import math
+import os
 import time
+
 import requests
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
-from config import HEADERS, IMAGE_DIR, SLICE_DIR, MAX_SLICE_HEIGHT, SLICE_OVERLAP
+from config import (
+    HEADERS,
+    IMAGE_DIR,
+    IMAGE_TTL_DAYS,
+    MAX_SLICE_HEIGHT,
+    OCR_SLEEP_INTERVAL,
+    SLICE_DIR,
+    SLICE_OVERLAP,
+)
 from weibo_fetcher import retry
 
-ocr = RapidOCR()
+logger = logging.getLogger(__name__)
+
+_ocr = None
+
+
+def _get_ocr() -> RapidOCR:
+    global _ocr
+    if _ocr is None:
+        _ocr = RapidOCR()
+    return _ocr
 
 
 # ─────────────────────────────────────────────
@@ -19,10 +38,6 @@ ocr = RapidOCR()
 # ─────────────────────────────────────────────
 @retry(max_times=3, delay=5)
 def download_image(img_url: str, save_name: str) -> str | None:
-    """
-    下载图片，以 save_name 命名（不含扩展名）保存到 IMAGE_DIR。
-    文件已存在时直接返回本地路径，不重复下载。
-    """
     os.makedirs(IMAGE_DIR, exist_ok=True)
     if img_url.startswith("//"):
         img_url = "https:" + img_url
@@ -45,10 +60,6 @@ def download_image(img_url: str, save_name: str) -> str | None:
 # 超高图切片
 # ─────────────────────────────────────────────
 def slice_tall_image(image_path: str) -> list[str]:
-    """
-    图片高度超过 MAX_SLICE_HEIGHT 时按片切割，返回切片路径列表。
-    普通高度图片直接返回 [image_path]。
-    """
     img = Image.open(image_path)
     w, h = img.size
 
@@ -70,27 +81,70 @@ def slice_tall_image(image_path: str) -> list[str]:
         if bottom >= h:
             break
 
-    print(f"    [i] 超高图 {h}px → 切成 {len(slices)} 片（每片 ≤ {MAX_SLICE_HEIGHT}px）")
+    logger.info("超高图 %dpx → 切成 %d 片", h, len(slices))
     return slices
 
 
 # ─────────────────────────────────────────────
-# OCR 识别
+# 单切片 OCR（含重试）
+# ─────────────────────────────────────────────
+@retry(max_times=2, delay=3)
+def _ocr_single(slice_path: str) -> list[str]:
+    result, _ = _get_ocr()(slice_path)
+    if not result:
+        return []
+    texts = []
+    for item in result:
+        if isinstance(item, (list, tuple)) and len(item) >= 2 and item[1]:
+            texts.append(str(item[1]))
+    return texts
+
+
+# ─────────────────────────────────────────────
+# 内部去重（移除 OCR 重复行）
+# ─────────────────────────────────────────────
+def _dedup_lines(lines: list[str]) -> list[str]:
+    seen = set()
+    deduped = []
+    for line in lines:
+        s = line.strip()
+        if s and s not in seen:
+            deduped.append(s)
+            seen.add(s)
+    return deduped
+
+
+# ─────────────────────────────────────────────
+# OCR 识别（含自动切片 + 去重）
 # ─────────────────────────────────────────────
 def ocr_image(image_path: str) -> str:
-    """对单张图片（含超高图自动切片）进行 OCR，返回识别文本。"""
     slice_paths = slice_tall_image(image_path)
     all_texts = []
 
     for sp in slice_paths:
         try:
-            result, _ = ocr(sp)
-            if not result:
-                continue
-            for item in result:
-                if isinstance(item, (list, tuple)) and len(item) >= 2 and item[1]:
-                    all_texts.append(str(item[1]))
+            texts = _ocr_single(sp)
+            all_texts.extend(texts)
         except Exception as e:
-            print(f"    [!] OCR 片段失败 {sp}: {e}")
+            logger.error("OCR 片段失败 %s: %s", sp, e)
+        time.sleep(OCR_SLEEP_INTERVAL)
 
+    all_texts = _dedup_lines(all_texts)
     return "\n".join(all_texts)
+
+
+# ─────────────────────────────────────────────
+# 清理过期图片
+# ─────────────────────────────────────────────
+def cleanup_old_images(ttl_days: int = IMAGE_TTL_DAYS) -> None:
+    now = time.time()
+    for directory in (IMAGE_DIR, SLICE_DIR):
+        if not os.path.exists(directory):
+            continue
+        for fname in os.listdir(directory):
+            fpath = os.path.join(directory, fname)
+            if os.path.isfile(fpath):
+                age = now - os.path.getmtime(fpath)
+                if age > ttl_days * 86400:
+                    os.remove(fpath)
+                    logger.info("清理过期图片: %s", fpath)
